@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GATE 2026 Test Series Schedule Planner</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* Using Inter as the default font, matching the modern look of many React apps */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom focus rings for better accessibility and design consistency */
+        input[type="date"]:focus, input[type="checkbox"]:focus {
+            --tw-ring-color: #3b82f6; /* blue-500 */
+            --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+            --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+            box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- Main application container -->
+    <div id="app-root"></div>
+
+    <script>
+        // --- DATA & STATE MANAGEMENT ---
+
+        // Global state object to hold application data, similar to React's state
+        const AppState = {
+            currentDate: '2025-07-26',
+            manuallyFinished: [], // Stores { name: string, timestamp: number }
+        };
+
+        // Hardcoded subject data, equivalent to the useMemo hook in the React version
+        const subjects = [
+            { name: 'Discrete Mathematics', goStart: 'Apr 4', goEnd: 'Apr 14', zealStart: 'Feb 15', zealEnd: 'Mar 11' },
+            { name: 'Engineering Mathematics', goStart: 'Apr 25', goEnd: 'Apr 30', zealStart: 'Aug 14', zealEnd: 'Sep 1' },
+            { name: 'Digital Logic', goStart: 'May 13', goEnd: 'May 18', zealStart: 'May 28', zealEnd: 'Jun 9' },
+            { name: 'Database Management Systems', goStart: 'May 28', goEnd: 'Jun 7', zealStart: 'Jul 3', zealEnd: 'Jul 21' },
+            { name: 'C Programming', goStart: 'Jun 18', goEnd: 'Jun 23', zealStart: 'Mar 17', zealEnd: 'Mar 17' },
+            { name: 'Theory of Computation', goStart: 'Jul 3', goEnd: 'Jul 13', zealStart: 'Jul 27', zealEnd: 'Aug 2' },
+            { name: 'Computer Networks', goStart: 'Jul 24', goEnd: 'Jul 31', zealStart: 'Apr 16', zealEnd: 'May 4' },
+            { name: 'Compiler Design', goStart: 'Aug 11', goEnd: 'Aug 16', zealStart: 'Aug 8', zealEnd: 'Aug 8' },
+            { name: 'Computer Organisation', goStart: 'Aug 26', goEnd: 'Sep 3', zealStart: 'Jun 15', zealEnd: 'Jun 27' },
+            { name: 'Operating Systems', goStart: 'Sep 16', goEnd: 'Sep 23', zealStart: 'May 10', zealEnd: 'May 22' },
+            { name: 'Data Structures', goStart: 'Oct 6', goEnd: 'Oct 17', zealStart: 'Mar 23', zealEnd: 'Apr 10' },
+            { name: 'Algorithms', goStart: 'Oct 27', goEnd: 'Nov 4', zealStart: 'Mar 23', zealEnd: 'Apr 10' },
+            { name: 'Mock Tests', goStart: 'Nov 17', goEnd: 'Jan 25', zealStart: 'Dec 13', zealEnd: 'Jan 27' }
+        ];
+
+        // --- HELPER FUNCTIONS (LOGIC) ---
+
+        /**
+         * Parses a date string (e.g., "Apr 4") into a Date object.
+         * Handles the year change for mock tests starting in January.
+         * @param {string} dateStr - The date string to parse.
+         * @param {string} subjectName - The name of the subject for special date logic.
+         * @returns {Date} The parsed date object.
+         */
+        const parseDate = (dateStr, subjectName = '') => {
+            const [month, day] = dateStr.split(' ');
+            const monthMap = {
+                'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05', 'Jun': '06',
+                'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+            };
+            // Special case for Mock Tests which can span into the next year.
+            const year = subjectName === 'Mock Tests' && ['Jan'].includes(month) ? '2026' : '2025';
+            return new Date(`${year}-${monthMap[month]}-${String(day).padStart(2, '0')}T00:00:00`);
+        };
+
+        /**
+         * Determines the status ('completed' or 'upcoming') of a test series.
+         * @param {string} startDateStr - The start date of the series.
+         * @param {string} current - The current date from the date picker.
+         * @param {string} subjectName - The subject name for parseDate.
+         * @returns {string} The status.
+         */
+        const getStatus = (startDateStr, current, subjectName = '') => {
+            const start = parseDate(startDateStr, subjectName);
+            const now = new Date(current);
+            // If the start date is before the current date, it's completed.
+            const daysDiff = Math.ceil((start - now) / (1000 * 60 * 60 * 24));
+            return daysDiff < 0 ? 'completed' : 'upcoming';
+        };
+
+        /**
+         * Calculates the priority ('high', 'medium', 'low') based on completion status.
+         * @param {string} goStatus - Status of the GO Classes test.
+         * @param {string} zealStatus - Status of the GATE @ Zeal test.
+         * @returns {string} The priority level.
+         */
+        const getPriority = (goStatus, zealStatus) => {
+            const goCompleted = goStatus === 'completed';
+            const zealCompleted = zealStatus === 'completed';
+            if (goCompleted && zealCompleted) return 'high';
+            if (goCompleted || zealCompleted) return 'medium';
+            return 'low';
+        };
+
+        // --- HELPER FUNCTIONS (STYLING & ICONS) ---
+        // These functions return Tailwind classes or SVG strings, replicating the logic from the React version.
+
+        const getStatusColor = (status) => {
+            switch (status) {
+                case 'upcoming': return 'bg-blue-100 text-blue-800 border-blue-200';
+                case 'completed': return 'bg-green-100 text-green-800 border-green-200';
+                default: return 'bg-gray-100 text-gray-600 border-gray-200';
+            }
+        };
+
+        const getPriorityStyling = (priority) => {
+            switch (priority) {
+                case 'high': return 'border-l-4 border-red-500 bg-red-50';
+                case 'medium': return 'border-l-4 border-orange-500 bg-orange-50';
+                case 'low': return 'border-l-4 border-yellow-500 bg-yellow-50';
+                case 'finished': return 'border-l-4 border-green-500 bg-green-50';
+                default: return 'border-l-4 border-gray-300 bg-gray-50';
+            }
+        };
+
+        // Inlined SVG icons to replicate lucide-react components.
+        const icons = {
+            calendar: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-blue-600" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"></rect><line x1="16" x2="16" y1="2" y2="6"></line><line x1="8" x2="8" y1="2" y2="6"></line><line x1="3" x2="21" y1="10" y2="10"></line></svg>`,
+            clock: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`,
+            checkCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`,
+            alertCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>`,
+            dashboard: {
+                high: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-red-600" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`,
+                medium: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-orange-500" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>`,
+                low: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-yellow-600" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`,
+                finished: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-green-600" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="m9 14 2 2 4-4"></path></svg>`,
+            }
+        };
+
+        const getStatusIcon = (status) => {
+            switch (status) {
+                case 'upcoming': return icons.clock;
+                case 'completed': return icons.checkCircle;
+                default: return icons.alertCircle;
+            }
+        };
+
+        // --- EVENT HANDLERS ---
+
+        /**
+         * Handles changes to the date input. Updates state and re-renders the app.
+         * @param {Event} e - The input event.
+         */
+        function handleDateChange(e) {
+            AppState.currentDate = e.target.value;
+            render(); // Re-render the entire application
+        }
+
+        /**
+         * Toggles the 'finished' status of a subject. Updates state and re-renders.
+         * @param {string} subjectName - The name of the subject to toggle.
+         */
+        function handleToggleFinish(subjectName) {
+            const isFinished = AppState.manuallyFinished.some(item => item.name === subjectName);
+            if (isFinished) {
+                AppState.manuallyFinished = AppState.manuallyFinished.filter(item => item.name !== subjectName);
+            } else {
+                AppState.manuallyFinished.push({ name: subjectName, timestamp: Date.now() });
+            }
+            render(); // Re-render the entire application
+        }
+        
+        // --- RENDERING LOGIC ---
+
+        /**
+         * Creates the HTML for a single subject card.
+         * @param {object} subject - The processed subject data object.
+         * @returns {string} The HTML string for the subject card.
+         */
+        const createSubjectCardHTML = (subject) => {
+            return `
+                <div class="p-4 rounded-lg relative ${getPriorityStyling(subject.priority)}">
+                    <div class="absolute top-3 right-3">
+                        <input 
+                            type="checkbox"
+                            class="h-5 w-5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                            ${subject.isManualFinish ? 'checked' : ''}
+                            onchange="handleToggleFinish('${subject.name}')"
+                            aria-label="Mark ${subject.name} as finished"
+                        />
+                    </div>
+                    <h4 class="font-semibold text-gray-800 text-lg mb-3 pr-8">${subject.name}</h4>
+                    <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 ${subject.isManualFinish ? 'opacity-60' : ''}">
+                        <span class="font-medium text-gray-700">GO Classes:</span>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border ${getStatusColor(subject.goStatus)}">
+                                ${getStatusIcon(subject.goStatus)}
+                                ${subject.goStatus.toUpperCase()}
+                            </span>
+                            <span class="text-sm text-gray-600">${subject.goStart} - ${subject.goEnd}</span>
+                        </div>
+                        
+                        <span class="font-medium text-gray-700">GATE @ Zeal:</span>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border ${getStatusColor(subject.zealStatus)}">
+                                ${getStatusIcon(subject.zealStatus)}
+                                ${subject.zealStatus.toUpperCase()}
+                            </span>
+                            <span class="text-sm text-gray-600">${subject.zealStart} - ${subject.zealEnd}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        /**
+         * The main render function. It calculates all data and builds the entire application UI.
+         * This function is called on initial load and whenever the state changes.
+         */
+        const render = () => {
+            // 1. Process and sort data (equivalent to useMemo in React)
+            const analysisData = subjects.map(subject => {
+                const manualFinishEntry = AppState.manuallyFinished.find(item => item.name === subject.name);
+                const isManualFinish = !!manualFinishEntry;
+                
+                const goStatus = getStatus(subject.goStart, AppState.currentDate, subject.name);
+                const zealStatus = getStatus(subject.zealStart, AppState.currentDate, subject.name);
+                const priority = isManualFinish ? 'finished' : getPriority(goStatus, zealStatus);
+
+                return {
+                    ...subject,
+                    goStatus,
+                    zealStatus,
+                    priority,
+                    isManualFinish,
+                    timestamp: manualFinishEntry ? manualFinishEntry.timestamp : null,
+                    goStartDate: parseDate(subject.goStart, subject.name),
+                    zealStartDate: parseDate(subject.zealStart, subject.name)
+                };
+            }).sort((a, b) => {
+                const priorityOrder = { high: 0, medium: 1, low: 2, finished: 3 };
+                const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+                if (priorityDiff !== 0) return priorityDiff;
+
+                if (a.priority === 'high') {
+                    const aLatestCompletion = Math.max(a.goStartDate.getTime(), a.zealStartDate.getTime());
+                    const bLatestCompletion = Math.max(b.goStartDate.getTime(), b.zealStartDate.getTime());
+                    return aLatestCompletion - bLatestCompletion;
+                }
+                if (a.priority === 'medium') {
+                    const aNextStart = a.goStatus !== 'completed' ? a.goStartDate.getTime() : a.zealStartDate.getTime();
+                    const bNextStart = b.goStatus !== 'completed' ? b.goStartDate.getTime() : b.zealStartDate.getTime();
+                    return aNextStart - bNextStart;
+                }
+                if (a.priority === 'low') {
+                    const aEarliestStart = Math.min(a.goStartDate.getTime(), a.zealStartDate.getTime());
+                    const bEarliestStart = Math.min(b.goStartDate.getTime(), b.zealStartDate.getTime());
+                    return aEarliestStart - bEarliestStart;
+                }
+                if (a.priority === 'finished') {
+                    return b.timestamp - a.timestamp; // Sort by most recently finished
+                }
+                return 0;
+            });
+
+            // 2. Filter subjects into priority groups
+            const highPrioritySubjects = analysisData.filter(s => s.priority === 'high');
+            const mediumPrioritySubjects = analysisData.filter(s => s.priority === 'medium');
+            const lowPrioritySubjects = analysisData.filter(s => s.priority === 'low');
+            const finishedSubjects = analysisData.filter(s => s.priority === 'finished');
+
+            // 3. Generate the complete HTML for the application
+            const appHTML = `
+                <main class="max-w-4xl mx-auto p-4 sm:p-6 min-h-screen">
+                    <section aria-labelledby="planner-heading" class="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6">
+                        <h1 id="planner-heading" class="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">GATE 2026 Test Series Schedule Planner</h1>
+                        <div class="flex items-center gap-2 mb-6">
+                            ${icons.calendar}
+                            <label for="currentDate" class="font-medium text-gray-700 text-sm">Current Date:</label>
+                            <input
+                                id="currentDate"
+                                type="date"
+                                value="${AppState.currentDate}"
+                                onchange="handleDateChange(event)"
+                                class="border rounded-md px-3 py-1 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4" role="status" aria-live="polite">
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-semibold text-red-800">High</span>
+                                    ${icons.dashboard.high}
+                                </div>
+                                <div class="text-3xl font-bold text-red-600 mt-1">${highPrioritySubjects.length}</div>
+                            </div>
+                            <div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-semibold text-orange-800">Medium</span>
+                                    ${icons.dashboard.medium}
+                                </div>
+                                <div class="text-3xl font-bold text-orange-500 mt-1">${mediumPrioritySubjects.length}</div>
+                            </div>
+                            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-semibold text-yellow-800">Low</span>
+                                    ${icons.dashboard.low}
+                                </div>
+                                <div class="text-3xl font-bold text-yellow-600 mt-1">${lowPrioritySubjects.length}</div>
+                            </div>
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-semibold text-green-800">Finished</span>
+                                    ${icons.dashboard.finished}
+                                </div>
+                                <div class="text-3xl font-bold text-green-600 mt-1">${finishedSubjects.length}</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="space-y-8">
+                        ${highPrioritySubjects.length > 0 ? `
+                        <section aria-labelledby="high-priority-heading" class="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                            <h2 id="high-priority-heading" class="text-xl font-bold text-red-600 mb-4">High Priority</h2>
+                            <div class="space-y-4">
+                                ${highPrioritySubjects.map(createSubjectCardHTML).join('')}
+                            </div>
+                        </section>` : ''}
+
+                        ${mediumPrioritySubjects.length > 0 ? `
+                        <section aria-labelledby="medium-priority-heading" class="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                            <h2 id="medium-priority-heading" class="text-xl font-bold text-orange-500 mb-4">Medium Priority</h2>
+                            <div class="space-y-4">
+                                ${mediumPrioritySubjects.map(createSubjectCardHTML).join('')}
+                            </div>
+                        </section>` : ''}
+
+                        ${lowPrioritySubjects.length > 0 ? `
+                        <section aria-labelledby="low-priority-heading" class="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                            <h2 id="low-priority-heading" class="text-xl font-bold text-yellow-600 mb-4">Low Priority</h2>
+                            <div class="space-y-4">
+                                ${lowPrioritySubjects.map(createSubjectCardHTML).join('')}
+                            </div>
+                        </section>` : ''}
+
+                        ${finishedSubjects.length > 0 ? `
+                        <section aria-labelledby="finished-heading" class="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                            <h2 id="finished-heading" class="text-xl font-bold text-green-600 mb-4">Finished</h2>
+                            <div class="space-y-4">
+                                ${finishedSubjects.map(createSubjectCardHTML).join('')}
+                            </div>
+                        </section>` : ''}
+                    </div>
+
+                    <footer class="mt-8">
+                        <div class="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 bg-white p-4 rounded-lg shadow-md text-xs sm:text-sm text-gray-600 max-w-xl mx-auto">
+                            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-red-500 shrink-0"></div><span><span class="font-semibold">High:</span> Both series started</span></div>
+                            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-orange-500 shrink-0"></div><span><span class="font-semibold">Medium:</span> One series started</span></div>
+                            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-yellow-500 shrink-0"></div><span><span class="font-semibold">Low:</span> Neither series started</span></div>
+                            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-green-500 shrink-0"></div><span><span class="font-semibold">Finished:</span> Manually checked</span></div>
+                        </div>
+                    </footer>
+                </main>
+            `;
+
+            // 4. Inject the generated HTML into the DOM
+            document.getElementById('app-root').innerHTML = appHTML;
+        };
+
+        // --- INITIALIZATION ---
+        
+        // Set the document title on initial load
+        document.title = 'GATE 2026 Test Series Schedule Planner';
+        
+        // Perform the initial render when the script is loaded
+        render();
+
+    </script>
+</body>
+</html>
